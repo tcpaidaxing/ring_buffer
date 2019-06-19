@@ -20,7 +20,7 @@ typedef enum {
     RING_BUF_ERR_MALLOC,
     RING_BUF_ERR_SIZE,
     RING_BUF_ERR_SYNC,
-	
+
 } ring_buffer_return_t;
 
 typedef struct 

@@ -1,6 +1,4 @@
-/**@brief ring buffer测试程序，创建两个线程，一个生产者，一个消费者。
- * 生产者每隔1秒向buffer中投入数据，消费者每隔2秒去取数据。
- *@atuher Kenny  date:2019-06-18
+/**@brief ring buffer测试程序，?�建两� * ?�产者每?�1秒?�buffer� *@atuher Kenny  date:2019-06-18
  *gcc -o ring_buffer_test ring_buffer_test.c  ring_buffer.c -I./ -lpthread
  * */
 #include "ring_buffer.h"
@@ -40,8 +38,8 @@ student_info * get_student_info(time_t timer)
     student_info *stu_info = (student_info *)malloc(sizeof(student_info));
     if (!stu_info)
     {
-    	fprintf(stderr, "Failed to malloc memory.\n");
-    	return NULL;
+        fprintf(stderr, "Failed to malloc memory.\n");
+        return NULL;
     }
     srand(timer);
     stu_info->stu_id = 10000 + rand() % 9999;
@@ -57,13 +55,13 @@ void * consumer_proc(void *arg)
     student_info stu_info; 
     while(1)
     {
-	    sleep(2);
-	    log("------------------------------------------\n");
-	    log("get a student info from ring buffer.\n");
-	    ring_buffer_get(ring_buf, (void *)&stu_info, sizeof(student_info));
-	    log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
-	    print_student_info(&stu_info);
-	    log("------------------------------------------\n");
+        sleep(2);
+        log("------------------------------------------\n");
+        log("get a student info from ring buffer.\n");
+        ring_buffer_get(ring_buf, (void *)&stu_info, sizeof(student_info));
+        log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
+        print_student_info(&stu_info);
+        log("------------------------------------------\n");
     }
     return (void *)ring_buf;
 }
@@ -74,16 +72,16 @@ void * producer_proc(void *arg)
     ring_buffer_t *ring_buf = (ring_buffer_t *)arg;
     while(1)
     {
-	    time(&cur_time);
-	    srand(cur_time);
-	    int seed = rand() % 11111;
-	    log("******************************************\n");
-	    student_info *stu_info = get_student_info(cur_time + seed);
-	    log("put a student info to ring buffer.\n");
-	    ring_buffer_put(ring_buf, (void *)stu_info, sizeof(student_info));
-	    log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
-	    log("******************************************\n");
-	    sleep(1);
+        time(&cur_time);
+        srand(cur_time);
+        int seed = rand() % 11111;
+        log("******************************************\n");
+        student_info *stu_info = get_student_info(cur_time + seed);
+        log("put a student info to ring buffer.\n");
+        ring_buffer_put(ring_buf, (void *)stu_info, sizeof(student_info));
+        log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
+        log("******************************************\n");
+        sleep(1);
     }
     return (void *)ring_buf;
 }
@@ -95,9 +93,9 @@ pthread_t consumer_thread(void *arg)
     err = pthread_create(&consumer_tid, NULL, consumer_proc, arg);
     if (err != 0)
     {
-    	fprintf(stderr, "Failed to create consumer thread.errno:%u, reason:%s\n",
-      errno, strerror(errno));
-    	return -1;
+        fprintf(stderr, "Failed to create consumer thread.errno:%u, reason:%s\n",
+        errno, strerror(errno));
+        return -1;
     }
     return consumer_tid;
 }
@@ -108,9 +106,9 @@ pthread_t producer_thread(void *arg)
     err = pthread_create(&producer_tid, NULL, producer_proc, arg);
     if (err != 0)
     {
-    	fprintf(stderr, "Failed to create consumer thread.errno:%u, reason:%s\n",
-      errno, strerror(errno));
-    	return -1;
+        fprintf(stderr, "Failed to create consumer thread.errno:%u, reason:%s\n",
+        errno, strerror(errno));
+        return -1;
     }
     return producer_tid;
 }
