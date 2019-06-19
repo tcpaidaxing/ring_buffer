@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <assert.h>
 
-#define BUFFER_SIZE  1024 * 1024
+#define BUFFER_SIZE  (1024 * 1024 +1)
 
 #define log(fmt, arg...) printf("LOG:%d " fmt,__LINE__, ##arg)
 
@@ -53,7 +53,7 @@ student_info * get_student_info(time_t timer)
 
 void * consumer_proc(void *arg)
 {
-    struct ring_buffer *ring_buf = (struct ring_buffer *)arg;
+    ring_buffer_t *ring_buf = (ring_buffer_t *)arg;
     student_info stu_info; 
     while(1)
     {
@@ -61,7 +61,7 @@ void * consumer_proc(void *arg)
 	    log("------------------------------------------\n");
 	    log("get a student info from ring buffer.\n");
 	    ring_buffer_get(ring_buf, (void *)&stu_info, sizeof(student_info));
-	    log("ring buffer length: %u\n", ring_buffer_len(ring_buf));
+	    log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
 	    print_student_info(&stu_info);
 	    log("------------------------------------------\n");
     }
@@ -71,7 +71,7 @@ void * consumer_proc(void *arg)
 void * producer_proc(void *arg)
 {
     time_t cur_time;
-    struct ring_buffer *ring_buf = (struct ring_buffer *)arg;
+    ring_buffer_t *ring_buf = (ring_buffer_t *)arg;
     while(1)
     {
 	    time(&cur_time);
@@ -81,7 +81,7 @@ void * producer_proc(void *arg)
 	    student_info *stu_info = get_student_info(cur_time + seed);
 	    log("put a student info to ring buffer.\n");
 	    ring_buffer_put(ring_buf, (void *)stu_info, sizeof(student_info));
-	    log("ring buffer length: %u\n", ring_buffer_len(ring_buf));
+	    log("ring buffer length: %d------available:%d\n", ring_buffer_used(ring_buf), ring_buffer_available(ring_buf));
 	    log("******************************************\n");
 	    sleep(1);
     }
@@ -120,22 +120,13 @@ int main()
 {
     void * buffer = NULL;
     uint32_t size = 0;
-    struct ring_buffer *ring_buf = NULL;
+    ring_buffer_t *ring_buf = NULL;
     pthread_t consume_pid, produce_pid;
 
-    buffer = (void *)malloc(BUFFER_SIZE);
-    if (!buffer)
-    {
-    	fprintf(stderr, "Failed to malloc memory.\n");
-    	return -1;
-    }
     size = BUFFER_SIZE;
-    ring_buf = ring_buffer_init(buffer, size);
-    if (!ring_buf)
-    {
-    	fprintf(stderr, "Failed to init ring buffer.\n");
-    	return -1;
-    }
+    ring_buf = (ring_buffer_t *)malloc(sizeof(ring_buffer_t));
+    ring_buffer_init(ring_buf, size);
+
 #if 0
     student_info *stu_info = get_student_info(638946124);
     ring_buffer_put(ring_buf, (void *)stu_info, sizeof(student_info));
@@ -149,7 +140,7 @@ int main()
     consume_pid  = consumer_thread((void*)ring_buf);
     pthread_join(produce_pid, NULL);
     pthread_join(consume_pid, NULL);
-    ring_buffer_free(ring_buf);
+    ring_buffer_deinit(ring_buf);
 
 #endif
     return 0;

@@ -10,69 +10,97 @@
 #include <assert.h>
 #include <ring_buffer.h>
 
-//初始化缓冲区
-struct ring_buffer* ring_buffer_init(void *buffer, uint32_t size)
+static uint32_t roundUpToPowerOfTwo(uint32_t i) 
 {
-    assert(buffer);
-    struct ring_buffer *ring_buf = NULL;
+    i--; // If input is a power of two, shift its high-order bit right.
+
+    // "Smear" the high-order bit all the way to the right.
+    i |= i >> 1;
+    i |= i >> 2;
+    i |= i >> 4;
+    i |= i >> 8;
+    i |= i >> 16;
+
+    return i + 1;
+}
+
+//初始化缓冲区
+ring_buffer_return_t ring_buffer_init(ring_buffer_t *ring_buf, uint32_t size)
+{
+    assert(ring_buf);
+    
     if (!is_power_of_2(size))
     {
-		fprintf(stderr,"size must be power of 2.\n");
-        return ring_buf;
+        if(size > 0x80000000)                //max size 2G
+            return RING_BUF_ERR_SIZE;
+        size = roundUpToPowerOfTwo(size);
     }
-    ring_buf = (struct ring_buffer *)malloc(sizeof(struct ring_buffer));
+    ring_buf->buffer = (void *)malloc(size);
     if (!ring_buf)
     {
         fprintf(stderr,"Failed to malloc memory,errno:%u,reason:%s", errno, strerror(errno));
-        return ring_buf;
+        return RING_BUF_ERR_MALLOC;
     }
-    memset(ring_buf, 0, sizeof(struct ring_buffer));
-	
+    memset(ring_buf->buffer, 0, size);
 	ring_buf->mutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
     if(pthread_mutex_init(ring_buf->mutex, NULL) != 0)
     {
 		fprintf(stderr,"Failed to malloc memory,errno:%u,reason:%s", errno, strerror(errno));
-        return NULL;
+        return RING_BUF_ERR_SYNC;
     }
-    ring_buf->buffer = buffer;
     ring_buf->size   = size;
     ring_buf->in     = 0;
     ring_buf->out    = 0;
-	
-    return ring_buf;
+    
+    return RING_BUF_SUCCESS;
 }
 //释放缓冲区
-void ring_buffer_free(struct ring_buffer *ring_buf)
+ring_buffer_return_t ring_buffer_deinit(ring_buffer_t *ring_buf)
 {
-    if (ring_buf)
+    assert(ring_buf);
+    
+    if (ring_buf->buffer)
     {
-		if (ring_buf->buffer)
-		{
-			free(ring_buf->buffer);
-			ring_buf->buffer = NULL;
-		}
-		if(NULL != ring_buf->mutex) 
-		{
-			pthread_mutex_destroy(ring_buf->mutex);
-			free(ring_buf->mutex);
-			ring_buf->mutex = NULL;
-		}
-		free(ring_buf);
-		ring_buf = NULL;
+		free(ring_buf->buffer);
+		ring_buf->buffer = NULL;
     }
+	if(ring_buf->mutex) 
+	{
+		pthread_mutex_destroy(ring_buf->mutex);
+		free(ring_buf->mutex);
+		ring_buf->mutex = NULL;
+	}
+	return RING_BUF_SUCCESS;
 }
 
-//缓冲区的长度
-uint32_t __ring_buffer_len(const struct ring_buffer *ring_buf)
+//向缓冲区中存放数据
+uint32_t ring_buffer_put(ring_buffer_t *ring_buf, void *buffer, uint32_t size)
 {
-    return (ring_buf->in - ring_buf->out);
+    assert(ring_buf || buffer);
+    
+    uint32_t len = 0;
+    pthread_mutex_lock(ring_buf->mutex);
+
+	size = min(size, ring_buf->size - ring_buf->in + ring_buf->out);
+    /* first put the data starting from fifo->in to buffer end */
+    len  = min(size, ring_buf->size - (ring_buf->in & (ring_buf->size - 1)));
+    memcpy(ring_buf->buffer + (ring_buf->in & (ring_buf->size - 1)), buffer, len);
+    /* then put the rest (if any) at the beginning of the buffer */
+    memcpy(ring_buf->buffer, buffer + len, size - len);
+    ring_buf->in += size;
+	
+    pthread_mutex_unlock(ring_buf->mutex);
+    return size;
 }
 
 //从缓冲区中取数据
-uint32_t __ring_buffer_get(struct ring_buffer *ring_buf, void * buffer, uint32_t size)
+uint32_t ring_buffer_get(ring_buffer_t *ring_buf, void *buffer, uint32_t size)
 {
     assert(ring_buf || buffer);
+    
     uint32_t len = 0;
+    pthread_mutex_lock(ring_buf->mutex);
+
     size  = min(size, ring_buf->in - ring_buf->out);        
     /* first get the data from fifo->out until the end of the buffer */
     len = min(size, ring_buf->size - (ring_buf->out & (ring_buf->size - 1)));
@@ -80,49 +108,31 @@ uint32_t __ring_buffer_get(struct ring_buffer *ring_buf, void * buffer, uint32_t
     /* then get the rest (if any) from the beginning of the buffer */
     memcpy(buffer + len, ring_buf->buffer, size - len);
     ring_buf->out += size;
-    return size;
-}
-//向缓冲区中存放数据
-uint32_t __ring_buffer_put(struct ring_buffer *ring_buf, void *buffer, uint32_t size)
-{
-    assert(ring_buf || buffer);
-    uint32_t len = 0;
-    size = min(size, ring_buf->size - ring_buf->in + ring_buf->out);
-    /* first put the data starting from fifo->in to buffer end */
-    len  = min(size, ring_buf->size - (ring_buf->in & (ring_buf->size - 1)));
-    memcpy(ring_buf->buffer + (ring_buf->in & (ring_buf->size - 1)), buffer, len);
-    /* then put the rest (if any) at the beginning of the buffer */
-    memcpy(ring_buf->buffer, buffer + len, size - len);
-    ring_buf->in += size;
+	
+    pthread_mutex_unlock(ring_buf->mutex);
     return size;
 }
 
-uint32_t ring_buffer_len(const struct ring_buffer *ring_buf)
+ring_buffer_return_t ring_buffer_clear(ring_buffer_t* ring_buf)
 {
-    uint32_t len = 0;
+    assert(ring_buf);
     pthread_mutex_lock(ring_buf->mutex);
-    len = __ring_buffer_len(ring_buf);
+    
+    ring_buf->in   = 0;
+    ring_buf->out   = 0;
+
     pthread_mutex_unlock(ring_buf->mutex);
-    return len;
+    return RING_BUF_SUCCESS;
 }
 
-uint32_t ring_buffer_get(struct ring_buffer *ring_buf, void *buffer, uint32_t size)
+int32_t ring_buffer_used(const ring_buffer_t *ring_buf)
 {
-    uint32_t ret;
-    pthread_mutex_lock(ring_buf->mutex);
-    ret = __ring_buffer_get(ring_buf, buffer, size);
-    //buffer中没有数据
-    if (ring_buf->in == ring_buf->out)
-    ring_buf->in = ring_buf->out = 0;
-    pthread_mutex_unlock(ring_buf->mutex);
-    return ret;
+    assert(ring_buf);
+	return (ring_buf->in - ring_buf->out);
 }
 
-uint32_t ring_buffer_put(struct ring_buffer *ring_buf, void *buffer, uint32_t size)
+int32_t ring_buffer_available(ring_buffer_t* ring_buf)
 {
-    uint32_t ret;
-    pthread_mutex_lock(ring_buf->mutex);
-    ret = __ring_buffer_put(ring_buf, buffer, size);
-    pthread_mutex_unlock(ring_buf->mutex);
-    return ret;
+    assert(ring_buf);
+    return (ring_buf->size - ring_buf->in + ring_buf->out);
 }
