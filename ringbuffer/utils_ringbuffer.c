@@ -93,44 +93,79 @@ ring_buffer_return_t utils_ring_buffer_deinit(ring_buffer_t *ring_buf)
     return RING_BUF_SUCCESS;
 }
 
+as_uint32 __ring_buffer_put(ring_buffer_t *ring_buf, void *buffer, as_uint32 size)
+{
+    as_uint32 len = 0;
+
+    size = min(size, ring_buf->size - ring_buf->in + ring_buf->out);
+
+     __sync_synchronize();
+     
+    /* first put the data starting from fifo->in to buffer end */
+    len = min(size, ring_buf->size - (ring_buf->in & (ring_buf->size - 1)));
+    memcpy(ring_buf->buffer + (ring_buf->in & (ring_buf->size - 1)), buffer, len);
+    /* then put the rest (if any) at the beginning of the buffer */
+    memcpy(ring_buf->buffer, buffer + len, size - len);
+
+     __sync_synchronize();
+     
+    ring_buf->in += size;
+
+    return size;
+}
 //向缓冲区中存放数据
 as_uint32 utils_ring_buffer_put(ring_buffer_t *ring_buf, void *buffer, as_uint32 size)
 {
     assert(ring_buf || buffer);
     
-    as_uint32 len = 0;
+    as_uint32 ret;
     pthread_mutex_lock(ring_buf->mutex);
 
-    size = min(size, ring_buf->size - ring_buf->in + ring_buf->out);
-    /* first put the data starting from fifo->in to buffer end */
-    len  = min(size, ring_buf->size - (ring_buf->in & (ring_buf->size - 1)));
-    memcpy(ring_buf->buffer + (ring_buf->in & (ring_buf->size - 1)), buffer, len);
-    /* then put the rest (if any) at the beginning of the buffer */
-    memcpy(ring_buf->buffer, buffer + len, size - len);
-    ring_buf->in += size;
+    ret = __ring_buffer_put(ring_buf, buffer, size);
 
     pthread_mutex_unlock(ring_buf->mutex);
-    return size;
+    return ret;
 }
 
-//从缓冲区中取数据
-as_uint32 utils_ring_buffer_get(ring_buffer_t *ring_buf, void *buffer, as_uint32 size)
-{
-    assert(ring_buf || buffer);
-    
+as_uint32 __ring_buffer_get(ring_buffer_t *ring_buf, void *buffer, as_uint32 size)
+{    
     as_uint32 len = 0;
-    pthread_mutex_lock(ring_buf->mutex);
 
-    size  = min(size, ring_buf->in - ring_buf->out);        
+    size = min(size, ring_buf->in - ring_buf->out);       
+
+    __sync_synchronize();
+    
     /* first get the data from fifo->out until the end of the buffer */
     len = min(size, ring_buf->size - (ring_buf->out & (ring_buf->size - 1)));
     memcpy(buffer, ring_buf->buffer + (ring_buf->out & (ring_buf->size - 1)), len);
     /* then get the rest (if any) from the beginning of the buffer */
     memcpy(buffer + len, ring_buf->buffer, size - len);
+
+    __sync_synchronize();
+    
     ring_buf->out += size;
 
-    pthread_mutex_unlock(ring_buf->mutex);
     return size;
+}
+//从缓冲区中取数据
+as_uint32 utils_ring_buffer_get(ring_buffer_t *ring_buf, void *buffer, as_uint32 size)
+{
+    assert(ring_buf || buffer);
+    
+    as_uint32 ret = 0;
+    pthread_mutex_lock(ring_buf->mutex);
+
+    ret = __ring_buffer_get(ring_buf, buffer, size);
+        
+    /* 当 ring_buf->in == ring_buf->out时，buffer为空 */
+    if(ring_buf->in == ring_buf->out)
+    {
+        utils_ring_buffer_clear(ring_buf);
+    }
+
+    pthread_mutex_unlock(ring_buf->mutex);
+    
+    return ret;
 }
 
 ring_buffer_return_t utils_ring_buffer_clear(ring_buffer_t* ring_buf)
