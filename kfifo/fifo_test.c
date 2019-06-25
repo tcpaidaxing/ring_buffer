@@ -14,20 +14,23 @@
 
 #define BUFFER_SIZE  (1024 * 1024 +1)
 
+as_handle ufifo = 0;
+pthread_t consumer_tid;
+pthread_t producer_tid;
+
 typedef struct student_info
 {
     as_uint64 stu_id;
     as_uint32 age;
     as_uint32 score;
-}student_info;
+} student_info;
 
-pthread_t consumer_tid;
-pthread_t producer_tid;
+
 
 void print_student_info(const student_info *stu_info)
 {
     assert(stu_info);
-    AS_DEBUG("id:%lu\t",stu_info->stu_id);
+    AS_DEBUG("id:%llu\t",stu_info->stu_id);
     AS_DEBUG("age:%u\t",stu_info->age);
     AS_DEBUG("score:%u\n",stu_info->score);
 }
@@ -50,25 +53,26 @@ student_info * get_student_info(time_t timer)
 
 void * consumer_proc(void *arg)
 {
-    fifo_t *ufifo = (fifo_t *)arg;
+    as_handle consumer_ufifo = (as_handle)arg;
     student_info stu_info; 
     while(1)
     {
         sleep(2);
         AS_DEBUG("------------------------------------------\n");
         AS_DEBUG("get a student info from ring buffer.\n");
-        utils_fifo_get(ufifo, (void *)&stu_info, sizeof(student_info));
-        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_fifo_used(ufifo), utils_fifo_available(ufifo));
+        //utils_fifo_get(consumer_ufifo, (void *)&stu_info, sizeof(student_info));
+        utils_fifo_pop(consumer_ufifo, (as_uint8 *)&stu_info,  sizeof(student_info));
+        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_fifo_used(consumer_ufifo), utils_fifo_available(consumer_ufifo));
         print_student_info(&stu_info);
         AS_DEBUG("------------------------------------------\n");
     }
-    return (void *)ufifo;
+    return NULL;
 }
 
 void * producer_proc(void *arg)
 {
     time_t cur_time;
-    fifo_t *ufifo = (fifo_t *)arg;
+    as_handle producer_ufifo = (as_handle)arg;
     while(1)
     {
         time(&cur_time);
@@ -77,12 +81,13 @@ void * producer_proc(void *arg)
         AS_DEBUG("******************************************\n");
         student_info *stu_info = get_student_info(cur_time + seed);
         AS_DEBUG("put a student info to ring buffer.\n");
-        utils_fifo_put(ufifo, (void *)stu_info, sizeof(student_info));
-        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_fifo_used(ufifo), utils_fifo_available(ufifo));
+        //utils_fifo_put(producer_ufifo, (void *)stu_info, sizeof(student_info));
+        utils_fifo_push(producer_ufifo, (as_uint8 *)stu_info, sizeof(student_info));
+        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_fifo_used(producer_ufifo), utils_fifo_available(producer_ufifo));
         AS_DEBUG("******************************************\n");
         sleep(1);
     }
-    return (void *)ufifo;
+    return NULL;
 }
 
 pthread_t consumer_thread(void *arg)
@@ -115,11 +120,12 @@ pthread_t producer_thread(void *arg)
 
 int main()
 {
+    as_int32 ret = 0;
     as_uint32 size = BUFFER_SIZE;
-    fifo_t *ufifo = NULL;
+
     pthread_t consume_pid, produce_pid;
 
-    ufifo = utils_fifo_init(size);
+    ret = utils_fifo_create(&ufifo, size);
 
 #if 0
     student_info *stu_info = get_student_info(638946124);
@@ -134,7 +140,7 @@ int main()
     consume_pid  = consumer_thread((void*)ufifo);
     pthread_join(produce_pid, NULL);
     pthread_join(consume_pid, NULL);
-    utils_fifo_deinit(ufifo);
+    utils_fifo_delete(ufifo);
 
 #endif
     return 0;

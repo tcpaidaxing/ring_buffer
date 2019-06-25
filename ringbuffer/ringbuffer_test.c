@@ -1,4 +1,4 @@
-/**@brief ring buffer测试程序，?�建两� * ?�产者每?�1秒?�buffer� 
+/**@brief ring buffer测试程序，?�建两� * ?�产?�每?�?秒?�?uffer�?
  *@atuher Kenny  date:2019-06-18
  *gcc -o ring_buffer_test ring_buffer_test.c  ring_buffer.c -I./ -lpthread
  * */
@@ -14,76 +14,63 @@
 #include "as_log.h"
 
 #define BUFFER_SIZE  (1024 * 1024 +1)
-
-typedef struct student_info
-{
-    as_uint64 stu_id;
-    as_uint32 age;
-    as_uint32 score;
-}student_info;
-
+as_handle ring_buf = 0;
 pthread_t consumer_tid;
 pthread_t producer_tid;
 
-as_void print_student_info(const student_info *stu_info)
-{
-    assert(stu_info);
-    AS_DEBUG("id:%lu\t",stu_info->stu_id);
-    AS_DEBUG("age:%u\t",stu_info->age);
-    AS_DEBUG("score:%u\n",stu_info->score);
-}
-
-student_info * get_student_info(time_t timer)
-{
-    student_info *stu_info = (student_info *)malloc(sizeof(student_info));
-    if (!stu_info)
-    {
-        fprintf(stderr, "Failed to malloc memory.\n");
-        return NULL;
-    }
-    srand(timer);
-    stu_info->stu_id = 10000 + rand() % 9999;
-    stu_info->age = rand() % 30;
-    stu_info->score = rand() % 101;
-    print_student_info(stu_info);
-    return stu_info;
-}
 
 as_void * consumer_proc(as_void *arg)
 {
-    ring_buffer_t *ring_buf = (ring_buffer_t *)arg;
-    student_info stu_info; 
+    as_handle consumer_ringbuf = (as_handle)arg;
+    
+    as_char data[100] = {'0'};
+    as_uint32 size = 0;
     while(1)
     {
         sleep(2);
-        AS_DEBUG("------------------------------------------\n");
-        AS_DEBUG("get a student info from ring buffer.\n");
-        utils_ring_buffer_get(ring_buf, (as_void *)&stu_info, sizeof(student_info));
-        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_ring_buffer_used(ring_buf), utils_ring_buffer_available(ring_buf));
-        print_student_info(&stu_info);
-        AS_DEBUG("------------------------------------------\n");
+        AS_DEBUG("-------------------------------------------------------------------------\n");
+        memset(data, 0, 100);
+        utils_ringbuffer_get_data(&consumer_ringbuf, (as_char *)data, &size);
+        AS_DEBUG("GET:%d, ring buffer length: %d  available:%d\n",size, utils_ring_buffer_used(&consumer_ringbuf), utils_ring_buffer_available(&consumer_ringbuf));
+        AS_DEBUG("data:%s\n",data);
+        AS_DEBUG("-------------------------------------------------------------------------\n");
     }
-    return (as_void *)ring_buf;
+    return NULL;
 }
 
 as_void * producer_proc(as_void *arg)
 {
-    time_t cur_time;
-    ring_buffer_t *ring_buf = (ring_buffer_t *)arg;
+    as_handle producer_ringbuf = (as_handle)arg;
+    as_uint32 ret = 0;
+    as_char *data = "Hello World!12345678901234567#";
     while(1)
     {
-        time(&cur_time);
-        srand(cur_time);
-        int seed = rand() % 11111;
-        AS_DEBUG("******************************************\n");
-        student_info *stu_info = get_student_info(cur_time + seed);
-        AS_DEBUG("put a student info to ring buffer.\n");
-        utils_ring_buffer_put(ring_buf, (as_void *)stu_info, sizeof(student_info));
-        AS_DEBUG("ring buffer length: %d------available:%d\n", utils_ring_buffer_used(ring_buf), utils_ring_buffer_available(ring_buf));
+        AS_DEBUG("******************************************strlen(data):%ld***data:%s\n",strlen(data),data);
+        
+        ret = utils_ringbuffer_set_data(&producer_ringbuf, (as_char *)data, strlen(data));
+        AS_DEBUG("PUT:%d, ring buffer length: %d  available:%d\n", ret, utils_ring_buffer_used(&producer_ringbuf), utils_ring_buffer_available(&producer_ringbuf));
         AS_DEBUG("******************************************\n");
         sleep(1);
     }
-    return (as_void *)ring_buf;
+    return NULL;
+}
+
+as_void * producer_proc1(as_void *arg)
+{
+    as_handle producer_ringbuf = (as_handle)arg;
+    
+    as_uint32 ret = 0;
+    as_char *data = "abscefgsdedghdfeadfabcdefghijkidhnfdlabscdabcdefghijklmnopqrstuvwxxyz!";
+    while(1)
+    {
+        AS_DEBUG("###########################################strlen(data):%ld###data:%s\n",strlen(data),data);
+
+        ret = utils_ringbuffer_set_data(&producer_ringbuf, (as_char *)data,  strlen(data));
+        AS_DEBUG("PUT:%d, ring buffer length: %d  available:%d\n", ret, utils_ring_buffer_used(&producer_ringbuf), utils_ring_buffer_available(&producer_ringbuf));
+        AS_DEBUG("###########################################\n");
+        sleep(3);
+    }
+    return NULL;
 }
 
 pthread_t consumer_thread(as_void *arg)
@@ -112,24 +99,36 @@ pthread_t producer_thread(as_void *arg)
     }
     return producer_tid;
 }
+pthread_t producer_thread1(as_void *arg)
+{
+    int err;
+   
+    err = pthread_create(&producer_tid, NULL, producer_proc1, arg);
+    if (err != 0)
+    {
+        fprintf(stderr, "Failed to create consumer thread.errno:%u, reason:%s\n",
+        errno, strerror(errno));
+        return -1;
+    }
+    return producer_tid;
+}
 
 
 int main()
 {
     as_uint32 size = BUFFER_SIZE;
-    ring_buffer_t *ring_buf = NULL;
-    pthread_t consume_pid, produce_pid;
+    pthread_t consume_pid, produce_pid, produce_pid1;
 
-    ring_buf = (ring_buffer_t *)malloc(sizeof(ring_buffer_t));
-    utils_ring_buffer_init(ring_buf, size);
+    utils_ringbuffer_create(&ring_buf, size);
 
     AS_DEBUG("multi thread test.......\n");
-    produce_pid  = producer_thread((as_void*)ring_buf);
-    consume_pid  = consumer_thread((as_void*)ring_buf);
+    produce_pid  = producer_thread((as_void *)ring_buf);
+    produce_pid1  = producer_thread1((as_void *)ring_buf);
+    consume_pid  = consumer_thread((as_void *)ring_buf);
     pthread_join(produce_pid, NULL);
+    pthread_join(produce_pid1, NULL);
     pthread_join(consume_pid, NULL);
-    utils_ring_buffer_deinit(ring_buf);
+    utils_ringbuffer_destroy(&ring_buf);
 
     return 0;
 }
-

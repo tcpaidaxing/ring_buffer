@@ -33,6 +33,18 @@ history  :
 /* static variable definition ***********************************************/
 
 /* function definition ******************************************************/
+//判断x是否是2的次方
+#define is_power_of_2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
+//取a和b中最小值
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+
+typedef struct 
+{
+    void             *buffer;     //缓冲区
+    as_uint32         size;       //大小
+    as_uint32         in;         //入口位置
+    as_uint32         out;        //出口位置
+} fifo_t;
 
 static as_uint32 roundUpToPowerOfTwo(as_uint32 i) 
 {
@@ -49,40 +61,61 @@ static as_uint32 roundUpToPowerOfTwo(as_uint32 i)
 }
 
 //初始化缓冲区
-fifo_t *utils_fifo_init(as_uint32 size)
+as_int32 utils_fifo_create(as_handle *fifo_handler, as_uint32 size)
 {
-    fifo_t *fifo;
+    fifo_t *fifo = NULL;
+
+    if (NULL == fifo_handler)
+    {
+        AS_ERROR("The params is null!\n");
+        goto ERROR;
+    }
 
     if (!is_power_of_2(size))
     {
         if(size > 0x80000000)                //max size 2G
-            return NULL;
+        {  
+            AS_ERROR("Size overflow!\n");
+            goto ERROR;
+        }
         size = roundUpToPowerOfTwo(size);
     }
 
     fifo = (fifo_t *)malloc(sizeof(fifo_t));
     if(!fifo)
-    {
-        return NULL;
+    {        
+        AS_ERROR("Malloc fifo error!\n");
+        goto ERROR;
     }
     
     fifo->buffer = (as_void *)malloc(size);
-    if (!fifo)
+    if (!fifo->buffer)
     {
-        free(fifo);
-        return NULL;
+        AS_ERROR("Malloc fifo buffer error!\n");
+        goto ERROR1;
     }
     memset(fifo->buffer, 0, size);
 
     fifo->size   = size;
     fifo->in     = 0;
     fifo->out    = 0;
+
+    *fifo_handler = (as_handle)fifo;
     
-    return fifo;
+    return 0;
+    
+ERROR1:
+    free(fifo);
+    fifo = NULL;
+ERROR:
+    return -1;
 }
+
 //释放缓冲区
-as_void utils_fifo_deinit(fifo_t *fifo)
+as_int32 utils_fifo_delete(as_handle fifo_handler)
 {    
+    fifo_t *fifo = (fifo_t *)fifo_handler;
+    
     if(fifo)
     {
         if (fifo->buffer)
@@ -93,12 +126,14 @@ as_void utils_fifo_deinit(fifo_t *fifo)
         free(fifo);
         fifo = NULL;
     }
+    
+    return 0;
 }
 
 //向缓冲区中存放数据
-as_uint32 utils_fifo_put(fifo_t *fifo, void *buffer, as_uint32 size)
+as_uint32 utils_fifo_push(as_handle fifo_handler, as_uint8 *buffer, as_uint32 size)
 {
-    assert(fifo || buffer);
+    fifo_t *fifo = (fifo_t *)fifo_handler;
     
     as_uint32 len = 0;
 
@@ -128,9 +163,9 @@ as_uint32 utils_fifo_put(fifo_t *fifo, void *buffer, as_uint32 size)
 }
 
 //从缓冲区中取数据
-as_uint32 utils_fifo_get(fifo_t *fifo, void *buffer, as_uint32 size)
+as_uint32 utils_fifo_pop(as_handle fifo_handler, as_uint8 *buffer, as_uint32 size)
 {
-    assert(fifo || buffer);
+    fifo_t *fifo = (fifo_t *)fifo_handler;
     
     as_uint32 len = 0;
 
@@ -159,24 +194,22 @@ as_uint32 utils_fifo_get(fifo_t *fifo, void *buffer, as_uint32 size)
     return size;
 }
 
-as_void utils_fifo_clear(fifo_t* fifo)
+as_void utils_fifo_clear(as_handle fifo_handler)
 {
-    assert(fifo);
+   fifo_t *fifo = (fifo_t *)fifo_handler;
     
     fifo->in   = 0;
     fifo->out   = 0;
 }
 
-as_int32 utils_fifo_used(const fifo_t *fifo)
+as_int32 utils_fifo_used(as_handle fifo_handler)
 {
-    assert(fifo);
+    fifo_t *fifo = (fifo_t *)fifo_handler;
     return (fifo->in - fifo->out);
 }
 
-as_int32 utils_fifo_available(fifo_t* fifo)
+as_int32 utils_fifo_available(as_handle fifo_handler)
 {
-    assert(fifo);
+    fifo_t *fifo = (fifo_t *)fifo_handler;
     return (fifo->size - fifo->in + fifo->out);
 }
-
-
