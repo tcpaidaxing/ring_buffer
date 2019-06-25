@@ -42,7 +42,7 @@ typedef struct
     as_uint32         size;       //大小
     as_uint32         in;         //入口位置
     as_uint32         out;        //出口位置
-    pthread_mutex_t  *mutex;    //互斥锁
+    pthread_mutex_t   mutex;    //互斥锁
 } ring_buffer_t;
 
 static as_uint32 roundUpToPowerOfTwo(as_uint32 i) 
@@ -94,8 +94,8 @@ as_int32 utils_ringbuffer_create(as_handle *phandle, as_uint32 size)
         goto ERROR1;
     }
     memset(ring_buf->buffer, 0, size);
-    ring_buf->mutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
-    if(pthread_mutex_init(ring_buf->mutex, NULL) != 0)
+
+    if(pthread_mutex_init(&ring_buf->mutex, NULL) != 0)
     {
         AS_ERROR("pthread_mutex_init error!\n");
         goto ERROR1;
@@ -125,12 +125,11 @@ as_int32 utils_ringbuffer_destroy(as_handle *phandle)
         free(ring_buf->buffer);
         ring_buf->buffer = NULL;
     }
-    if(ring_buf->mutex) 
-    {
-        pthread_mutex_destroy(ring_buf->mutex);
-        free(ring_buf->mutex);
-        ring_buf->mutex = NULL;
-    }
+
+    pthread_mutex_destroy(&ring_buf->mutex);
+    free(ring_buf);
+    ring_buf = NULL;
+    
     return 0;
 }
 
@@ -160,7 +159,7 @@ as_int32 utils_ringbuffer_set_data(as_handle *phandle, as_char *buffer, as_uint3
     ring_buffer_t *ring_buf = (ring_buffer_t *)*phandle;
 
     as_uint32 ret = 0;
-    pthread_mutex_lock(ring_buf->mutex);
+    pthread_mutex_lock(&ring_buf->mutex);
     if( (ring_buf->size - ring_buf->in + ring_buf->out) <= sizeof(size) )
     {
         return 0;
@@ -175,7 +174,7 @@ as_int32 utils_ringbuffer_set_data(as_handle *phandle, as_char *buffer, as_uint3
         ret = 0;
     }
 
-    pthread_mutex_unlock(ring_buf->mutex);
+    pthread_mutex_unlock(&ring_buf->mutex);
     return ret;
 }
 
@@ -205,7 +204,7 @@ as_int32 utils_ringbuffer_get_data(as_handle *phandle, as_char *buffer, as_uint3
     as_uint32 size = *buffer_size;
     as_uint32 ret = 0;
     as_uint32 len = 0;
-    pthread_mutex_lock(ring_buf->mutex);
+    pthread_mutex_lock(&ring_buf->mutex);
 
     ret = __ring_buffer_get(ring_buf, &len, sizeof(size));
     if(sizeof(size) == ret)
@@ -216,14 +215,8 @@ as_int32 utils_ringbuffer_get_data(as_handle *phandle, as_char *buffer, as_uint3
     {
         ret = 0;
     }
-        
-    /* 当 ring_buf->in == ring_buf->out时，buffer为空 */
-    if(ring_buf->in == ring_buf->out)
-    {
-        utils_ring_buffer_clear((as_handle *)ring_buf);
-    }
 
-    pthread_mutex_unlock(ring_buf->mutex);
+    pthread_mutex_unlock(&ring_buf->mutex);
     
     *buffer_size = ret;
     return 0;
@@ -233,12 +226,12 @@ as_void utils_ring_buffer_clear(as_handle *phandle)
 {
     ring_buffer_t *ring_buf = (ring_buffer_t *)*phandle;
 
-    pthread_mutex_lock(ring_buf->mutex);
+    pthread_mutex_lock(&ring_buf->mutex);
     
     ring_buf->in   = 0;
     ring_buf->out   = 0;
 
-    pthread_mutex_unlock(ring_buf->mutex);
+    pthread_mutex_unlock(&ring_buf->mutex);
 }
 
 as_int32 utils_ring_buffer_used(as_handle *phandle)
